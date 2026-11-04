@@ -57,7 +57,7 @@ function Centered({ children }: { children: ReactNode }) {
   )
 }
 
-function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () => void }) {
+function AuthForm({ mode, onAuthed, onSwitchMode }: { mode: 'setup' | 'login'; onAuthed: () => void; onSwitchMode: () => void }) {
   const { t } = useI18n()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -205,6 +205,13 @@ function AuthForm({ mode, onAuthed }: { mode: 'setup' | 'login'; onAuthed: () =>
             {t('auth.forgotPassword')}
           </button>
         )}
+        <button
+          type="button"
+          onClick={onSwitchMode}
+          className="mt-3 w-full text-center text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {isSetup ? t('auth.signIn') : t('auth.createAccount')}
+        </button>
       </div>
     </Centered>
   )
@@ -467,6 +474,11 @@ export function AuthGate({ children }: { children: ReactNode }) {
     queryFn: () => apiFetch('/api/auth/status'),
     retry: false,
   })
+  const [authMode, setAuthMode] = useState<'setup' | 'login'>('login')
+
+  useEffect(() => {
+    if (data) setAuthMode(data.needsSetup ? 'setup' : 'login')
+  }, [data?.needsSetup])
 
   useEffect(() => {
     const handler = () => { refetch() }
@@ -539,8 +551,13 @@ export function AuthGate({ children }: { children: ReactNode }) {
     }
     return <Centered><p className="flex items-center justify-center gap-2 text-sm text-muted-foreground"><Loader2 className="size-3.5 animate-spin" aria-hidden />{t('auth.loading')}</p></Centered>
   }
-  if (data.needsSetup) return <AuthForm mode="setup" onAuthed={onAuthed} />
-  if (!data.authenticated) return <AuthForm mode="login" onAuthed={onAuthed} />
+  if (!data.authenticated) return (
+    <AuthForm
+      mode={authMode}
+      onAuthed={onAuthed}
+      onSwitchMode={() => setAuthMode(current => current === 'setup' ? 'login' : 'setup')}
+    />
+  )
 
   return <>{children}</>
 }
