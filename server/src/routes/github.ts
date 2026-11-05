@@ -28,7 +28,9 @@ function readToken(): string | null {
     return null;
   }
 }
-async function github(path: string, init: RequestInit = {}) {
+type GitHubResponse = Record<string, any>;
+
+async function github(path: string, init: RequestInit = {}): Promise<GitHubResponse> {
   const token = readToken();
   if (!token) throw new Error('GitHub is not connected.');
   const response = await fetch(`${API}${path}`, {
@@ -41,7 +43,7 @@ async function github(path: string, init: RequestInit = {}) {
       ...init.headers,
     },
   });
-  const body = await response.json().catch(() => ({}));
+  const body: GitHubResponse = await response.json().catch((): GitHubResponse => ({}));
   if (!response.ok) {
     const error = new Error(body.message || `GitHub returned ${response.status}`);
     (error as Error & { status?: number }).status = response.status;
