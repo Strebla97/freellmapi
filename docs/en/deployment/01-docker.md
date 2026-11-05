@@ -72,6 +72,36 @@ The Dockerfile declares **no** `VOLUME` for `/app/server/data` on purpose. Persi
 
 See [02-updates-and-backup.md](02-updates-and-backup.md) for backups of this volume.
 
+## Railway deployment
+
+Railway should build this repository with its root Dockerfile. The image already installs dependencies, builds the server/CLI/dashboard, and starts the server; do not override those commands.
+
+1. Create a Railway project from the GitHub repository `Strebla97/freellmapi`, branch `main`.
+2. Set the service **Root Directory** to `/` and **Builder** to **Dockerfile**.
+3. Leave **Build Command**, **Start Command**, and **Pre-deploy Command** empty. The root `Dockerfile` owns the build and starts `node server/dist/index.js`.
+4. Add a Railway **Volume** to this service, mounted at `/app/server/data`. This is required: the SQLite database and encryption-key material live in that directory. Keep the same volume across redeploys.
+5. In **Settings → Networking**, generate a public domain. Use that exact HTTPS domain in the variables below and in the GitHub OAuth App.
+6. Set the service healthcheck path to `/api/ping`. The endpoint returns HTTP 200 when the server is ready.
+7. Keep the service at **one replica**. FreeLLMAPI is a single-user SQLite application; do not scale multiple service replicas against one SQLite volume.
+
+Required service variables:
+
+| Variable | Value |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `HOST` | `0.0.0.0` |
+| `ENCRYPTION_KEY` | A persistent, randomly generated 64-character hexadecimal key (32 bytes) |
+| `GITHUB_CLIENT_ID` | Client ID from your GitHub OAuth App |
+| `GITHUB_CLIENT_SECRET` | Client secret from your GitHub OAuth App; mark it secret |
+| `GITHUB_REDIRECT_URI` | `https://YOUR-RAILWAY-DOMAIN/api/github/callback` |
+| `PUBLIC_URL` | `https://YOUR-RAILWAY-DOMAIN` |
+
+Generate `ENCRYPTION_KEY` once with `openssl rand -hex 32` or `node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"`. Save it securely and never rotate or regenerate it casually: existing encrypted provider credentials will no longer decrypt if the key changes. Do not commit it to GitHub.
+
+In the GitHub OAuth App settings, set **Homepage URL** to `https://YOUR-RAILWAY-DOMAIN` and **Authorization callback URL** to the exact value of `GITHUB_REDIRECT_URI`. The callback URL must match exactly, including the `/api/github/callback` path. Keep the client secret only in Railway variables; never use a `VITE_` variable for it.
+
+Do not set `PORT`: Railway supplies it at runtime, and the server listens on that value. The Dockerfile's `3001` is only the local/default port. Leave `FREEAPI_DB_PATH` unset to use the default database at `/app/server/data/freeapi.db`; the Railway volume mounted above persists it. No PostgreSQL service or `DATABASE_URL` is required.
+
 ## Healthcheck
 
 Both the Dockerfile and the compose file define the same probe: a Node one-liner fetching `http://127.0.0.1:<port>/api/ping` inside the container, exiting non-zero unless the response is OK.
