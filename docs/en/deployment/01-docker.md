@@ -79,7 +79,7 @@ Railway should build this repository with its root Dockerfile. The image already
 1. Create a Railway project from the GitHub repository `Strebla97/freellmapi`, branch `main`.
 2. Set the service **Root Directory** to `/` and **Builder** to **Dockerfile**.
 3. Leave **Build Command**, **Start Command**, and **Pre-deploy Command** empty. The root `Dockerfile` owns the build and starts `node server/dist/index.js`.
-4. Add a Railway **Volume** to this service, mounted at `/app/server/data`. This is required: the SQLite database and encryption-key material live in that directory. Keep the same volume across redeploys.
+4. Add a Railway **Volume** to this service, mounted at `/app/server/data`. This is required: the SQLite database and its backup files live in that directory. Keep the same volume across redeploys; keep `ENCRYPTION_KEY` unchanged in Railway variables as well.
 5. In **Settings → Networking**, generate a public domain. Use that exact HTTPS domain in the variables below and in the GitHub OAuth App.
 6. Set the service healthcheck path to `/api/ping`. The endpoint returns HTTP 200 when the server is ready.
 7. Keep the service at **one replica**. FreeLLMAPI is a single-user SQLite application; do not scale multiple service replicas against one SQLite volume.
@@ -115,7 +115,7 @@ Both the Dockerfile and the compose file define the same probe: a Node one-liner
 
 ## Non-root runtime
 
-The runtime stage switches to `USER node` before `EXPOSE 3001`. The server data directory `/app/server/data` is created and chowned to `node:node` during the build so the running user owns it; all copied artifacts carry `--chown=node:node`.
+The runtime entrypoint starts as root only long enough to ensure `/app/server/data` (and any explicitly configured database/backup directories) is writable, then drops privileges with `setpriv` and runs the server as `node`. Copied application artifacts are owned by `node:node`.
 
 ## Why better-sqlite3 is compiled from source
 
