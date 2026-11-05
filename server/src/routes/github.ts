@@ -103,10 +103,15 @@ githubRouter.post('/disconnect', (_req, res) => {
 githubRouter.get('/repos', async (_req, res) => {
   try { res.json(await github('/user/repos?per_page=100&sort=updated')); } catch (e) { sendError(res, e); }
 });
+githubRouter.get('/repos/:owner/:repo', async (req, res) => {
+  try { res.json(await github(`/repos/${encodeURIComponent(req.params.owner)}/${encodeURIComponent(req.params.repo)}`)); }
+  catch (e) { sendError(res, e); }
+});
 githubRouter.get('/repos/:owner/:repo/tree', async (req, res) => {
   try {
-    const branch = typeof req.query.ref === 'string' ? req.query.ref : 'HEAD';
-    res.json(await github(`/repos/${encodeURIComponent(req.params.owner)}/${encodeURIComponent(req.params.repo)}/git/trees/${encodeURIComponent(branch)}?recursive=1`));
+    const repo = `/repos/${encodeURIComponent(req.params.owner)}/${encodeURIComponent(req.params.repo)}`;
+    const branch = typeof req.query.ref === 'string' ? req.query.ref : (await github(repo)).default_branch;
+    res.json(await github(`${repo}/git/trees/${encodeURIComponent(branch)}?recursive=1`));
   } catch (e) { sendError(res, e); }
 });
 githubRouter.get('/repos/:owner/:repo/file', async (req, res) => {
