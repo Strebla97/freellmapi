@@ -3,15 +3,66 @@ import type { Request, Response } from 'express';
 import crypto from 'node:crypto';
 import { z } from 'zod';
 import { decrypt, encrypt } from '../lib/crypto.js';
-import { getSetting, setSetting } from '../db/index.js';
+import { getDb, getSetting, setSetting } from '../db/index.js';
 import { requireAuth } from '../middleware/requireAuth.js';
 
 export const githubRouter = Router();
 // Only the OAuth callback is reachable without a dashboard Bearer token; its one-time state is the CSRF protection.
 githubRouter.use((req, res, next) => req.path === '/callback' ? next() : requireAuth(req, res, next));
 const TOKEN_SETTING = 'github_oauth_token_v1';
-const states = new Map<string, { createdAt: number }>();
+const STATE_SETTING = 'github_oauth_pending_states_v1';
 const STATE_TTL_MS = 10 * 60 * 1000;
+
+type PendingStates = Record<string, number>;
+
+function readPendingStates(raw: string | undefined): PendingStates {
+  if (!raw) return {};
+  try {
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    return Object.fromEntries(
+      Object.entries(parsed).filter((entry): entry is [string, number] =>
+        typeof entry[1] === 'number' && Number.isFinite(entry[1]),
+      ),
+    );
+  } catch {
+    return {};
+  }
+}
+
+// Persist OAuth state in SQLite rather than process memory. Railway can restart
+// a container between the authorization redirect and callback; the one-time
+// state must survive that restart. Transactions make consuming a state atomic.
+function storeOAuthState(state: string): void {
+  const db = getDb();
+  db.transaction((value: string, createdAt: number) => {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(STATE_SETTING) as { value: string } | undefined;
+    const pending = readPendingStates(row?.value);
+    for (const [key, timestamp] of Object.entries(pending)) {
+      if (Date.now() - timestamp > STATE_TTL_MS) delete pending[key];
+    }
+    pending[value] = createdAt;
+    db.prepare(`
+      INSERT INTO settings (key, value) VALUES (?, ?)
+      ON CONFLICT(key) DO UPDATE SET value = excluded.value
+    `).run(STATE_SETTING, JSON.stringify(pending));
+  })(state, Date.now());
+}
+
+function consumeOAuthState(state: string): number | null {
+  const db = getDb();
+  return db.transaction((value: string) => {
+    const row = db.prepare('SELECT value FROM settings WHERE key = ?').get(STATE_SETTING) as { value: string } | undefined;
+    const pending = readPendingStates(row?.value);
+    const createdAt = pending[value];
+    delete pending[value];
+    if (Object.keys(pending).length > 0) {
+      db.prepare('UPDATE settings SET value = ? WHERE key = ?').run(JSON.stringify(pending), STATE_SETTING);
+    } else {
+      db.prepare('DELETE FROM settings WHERE key = ?').run(STATE_SETTING);
+    }
+    return typeof createdAt === 'number' ? createdAt : null;
+  })(state);
+}
 const API = 'https://api.github.com';
 
 function redirectUri(): string {
@@ -65,17 +116,15 @@ githubRouter.get('/connect', (_req: Request, res: Response) => {
     return;
   }
   const state = crypto.randomBytes(32).toString('hex');
-  states.set(state, { createdAt: Date.now() });
-  for (const [key, value] of states) if (Date.now() - value.createdAt > STATE_TTL_MS) states.delete(key);
+  storeOAuthState(state);
   const params = new URLSearchParams({ client_id: clientId, redirect_uri: redirectUri(), scope: 'repo read:user', state });
   res.json({ url: `https://github.com/login/oauth/authorize?${params}` });
 });
 
 githubRouter.get('/callback', async (req: Request, res: Response) => {
   const state = typeof req.query.state === 'string' ? req.query.state : '';
-  const pending = states.get(state);
-  states.delete(state);
-  if (!pending || Date.now() - pending.createdAt > STATE_TTL_MS || typeof req.query.code !== 'string') {
+  const createdAt = state ? consumeOAuthState(state) : null;
+  if (createdAt === null || Date.now() - createdAt > STATE_TTL_MS || typeof req.query.code !== 'string') {
     res.status(400).send('GitHub connection expired or invalid. Return to FreeLLMAPI and try again.');
     return;
   }
