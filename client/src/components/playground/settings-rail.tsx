@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { ChevronsLeft, ChevronsRight, Github, ExternalLink, Unplug } from 'lucide-react'
+import { ChevronsLeft, ChevronsRight, GitBranch, ExternalLink, Unplug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { apiFetch } from '@/lib/api'
 import { Switch } from '@/components/ui/switch'
@@ -187,7 +187,7 @@ function GitHubConnection() {
 
   return (
     <section className="space-y-2 border-t pt-4">
-      <div className="flex items-center gap-2 text-xs font-medium"><Github className="size-4" /> GitHub</div>
+      <div className="flex items-center gap-2 text-xs font-medium"><GitBranch className="size-4" /> GitHub</div>
       {!configured ? (
         <p className="text-xs text-muted-foreground">Stel GITHUB_CLIENT_ID en GITHUB_CLIENT_SECRET in Railway in om GitHub te koppelen.</p>
       ) : connected ? (
