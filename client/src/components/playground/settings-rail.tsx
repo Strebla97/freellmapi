@@ -1,5 +1,7 @@
-import { ChevronsLeft, ChevronsRight } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { ChevronsLeft, ChevronsRight, Github, ExternalLink, Unplug } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { apiFetch } from '@/lib/api'
 import { Switch } from '@/components/ui/switch'
 import { ModelCombobox, type ModelComboOption } from '@/components/model-combobox'
 import {
@@ -138,6 +140,73 @@ function SamplingControlRow({
   )
 }
 
+
+const GITHUB_REPO_KEY = 'playground.github.repository'
+
+function GitHubConnection() {
+  const [configured, setConfigured] = useState(false)
+  const [connected, setConnected] = useState(false)
+  const [repos, setRepos] = useState<Array<{ full_name: string; private: boolean }>>([])
+  const [selected, setSelected] = useState(() => localStorage.getItem(GITHUB_REPO_KEY) || '')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
+
+  const refresh = async () => {
+    try {
+      const status = await apiFetch<{ configured: boolean; connected: boolean }>('/api/github/status')
+      setConfigured(status.configured)
+      setConnected(status.connected)
+      if (status.connected) {
+        const rows = await apiFetch<Array<{ full_name: string; private: boolean }>>('/api/github/repos')
+        setRepos(rows)
+      }
+    } catch (e) { setError(e instanceof Error ? e.message : 'GitHub kon niet worden geladen.') }
+  }
+  useEffect(() => { void refresh() }, [])
+
+  const connect = async () => {
+    setBusy(true); setError('')
+    try {
+      const result = await apiFetch<{ url: string }>('/api/github/connect')
+      window.location.assign(result.url)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Koppelen is mislukt.'); setBusy(false) }
+  }
+  const disconnect = async () => {
+    setBusy(true); setError('')
+    try {
+      await apiFetch('/api/github/disconnect', { method: 'POST' })
+      setConnected(false); setRepos([]); setSelected(''); localStorage.removeItem(GITHUB_REPO_KEY)
+    } catch (e) { setError(e instanceof Error ? e.message : 'Ontkoppelen is mislukt.') }
+    finally { setBusy(false) }
+  }
+  const selectRepo = (value: string) => {
+    setSelected(value)
+    if (value) localStorage.setItem(GITHUB_REPO_KEY, value)
+    else localStorage.removeItem(GITHUB_REPO_KEY)
+  }
+
+  return (
+    <section className="space-y-2 border-t pt-4">
+      <div className="flex items-center gap-2 text-xs font-medium"><Github className="size-4" /> GitHub</div>
+      {!configured ? (
+        <p className="text-xs text-muted-foreground">Stel GITHUB_CLIENT_ID en GITHUB_CLIENT_SECRET in Railway in om GitHub te koppelen.</p>
+      ) : connected ? (
+        <>
+          <p className="text-xs text-muted-foreground">GitHub is gekoppeld. Kies een repository voor de chatcontext.</p>
+          <select aria-label="GitHub repository" value={selected} onChange={e => selectRepo(e.target.value)} className="h-9 w-full rounded-lg border bg-background px-2 text-xs">
+            <option value="">Geen repository geselecteerd</option>
+            {repos.map(repo => <option key={repo.full_name} value={repo.full_name}>{repo.full_name}{repo.private ? ' (privé)' : ''}</option>)}
+          </select>
+          <Button type="button" size="sm" variant="outline" className="w-full" onClick={disconnect} disabled={busy}><Unplug className="mr-2 size-3.5" /> GitHub ontkoppelen</Button>
+        </>
+      ) : (
+        <Button type="button" size="sm" className="w-full" onClick={connect} disabled={busy}><ExternalLink className="mr-2 size-3.5" /> GitHub-account koppelen</Button>
+      )}
+      {error && <p role="alert" className="text-xs text-destructive">{error}</p>}
+    </section>
+  )
+}
+
 export function SettingsRail({
   open,
   onToggle,
@@ -205,6 +274,8 @@ export function SettingsRail({
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto p-3">
+          <GitHubConnection />
+
           <div className="space-y-1.5">
             <span className="block text-xs font-medium">{t('common.model')}</span>
             <ModelCombobox
