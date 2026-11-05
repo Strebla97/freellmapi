@@ -4,8 +4,11 @@ import crypto from 'node:crypto';
 import { z } from 'zod';
 import { decrypt, encrypt } from '../lib/crypto.js';
 import { getSetting, setSetting } from '../db/index.js';
+import { requireAuth } from '../middleware/requireAuth.js';
 
 export const githubRouter = Router();
+// Only the OAuth callback is reachable without a dashboard Bearer token; its one-time state is the CSRF protection.
+githubRouter.use((req, res, next) => req.path === '/callback' ? next() : requireAuth(req, res, next));
 const TOKEN_SETTING = 'github_oauth_token_v1';
 const states = new Map<string, { createdAt: number }>();
 const STATE_TTL_MS = 10 * 60 * 1000;
