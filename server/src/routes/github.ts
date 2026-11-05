@@ -43,7 +43,7 @@ async function github(path: string, init: RequestInit = {}): Promise<GitHubRespo
       ...init.headers,
     },
   });
-  const body: GitHubResponse = await response.json().catch((): GitHubResponse => ({}));
+  const body = await response.json().catch(() => ({})) as GitHubResponse;
   if (!response.ok) {
     const error = new Error(body.message || `GitHub returned ${response.status}`);
     (error as Error & { status?: number }).status = response.status;
